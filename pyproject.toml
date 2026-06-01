@@ -1,0 +1,9 @@
+[project]
+name = "bifrost"
+version = "0.0.1"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13, <4.0"
+dependencies = [
+    "django (>=5.2.7,<6.0.0)"
+]
