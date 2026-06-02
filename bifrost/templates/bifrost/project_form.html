@@ -1,0 +1,135 @@
+{% extends "bifrost/base.html" %}
+
+{% block title %}Bifröst — {% if project %}Edit{% else %}Create{% endif %} Project{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <li><a href="{% url 'bifrost:project-list' %}">Projects</a></li>
+            {% if project %}
+            <li><a href="{% url 'bifrost:project-detail' project.pk %}">{{ project.name }}</a></li>
+            <li class="is-active"><a href="#" aria-current="page">Edit</a></li>
+            {% else %}
+            <li class="is-active"><a href="#" aria-current="page">New Project</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+
+    <h1 class="title">{{ action }} Project</h1>
+
+    <div class="box">
+        <form method="post">
+            {% csrf_token %}
+
+            {# Name #}
+            <div class="field">
+                <label class="label">Name <span class="has-text-danger">*</span></label>
+                <div class="control">
+                    {{ form.name }}
+                </div>
+                {% if form.name.errors %}
+                <p class="help is-danger">{{ form.name.errors|join:", " }}</p>
+                {% endif %}
+            </div>
+
+            <div class="columns">
+                {# Project type (catalogue) #}
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Project Type</label>
+                        <div class="control">
+                            <div class="select is-fullwidth">
+                                {{ form.project_type }}
+                            </div>
+                        </div>
+                        {% if form.project_type.errors %}
+                        <p class="help is-danger">{{ form.project_type.errors|join:", " }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {# Custom type override #}
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Custom Type
+                            <span class="has-text-grey-light is-size-7">(override)</span>
+                        </label>
+                        <div class="control">
+                            {{ form.project_type_custom }}
+                        </div>
+                        <p class="help">Only fill in if no catalogue type matches.</p>
+                        {% if form.project_type_custom.errors %}
+                        <p class="help is-danger">{{ form.project_type_custom.errors|join:", " }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="columns">
+                {# Status #}
+                <div class="column is-narrow">
+                    <div class="field">
+                        <label class="label">Status</label>
+                        <div class="control">
+                            <div class="select">
+                                {{ form.status }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {# Owner (only on create form) #}
+                {% if form.owner %}
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Owner <span class="has-text-danger">*</span></label>
+                        <div class="control">
+                            <div class="select is-fullwidth">
+                                {{ form.owner }}
+                            </div>
+                        </div>
+                        {% if form.owner.errors %}
+                        <p class="help is-danger">{{ form.owner.errors|join:", " }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {# Description #}
+            <div class="field">
+                <label class="label">Description</label>
+                <div class="control">
+                    {{ form.description }}
+                </div>
+            </div>
+
+            {# Actions #}
+            <div class="field is-grouped mt-5">
+                <div class="control">
+                    <button class="button is-primary" type="submit">
+                        <span>{{ action }} Project</span>
+                    </button>
+                </div>
+                <div class="control">
+                    {% if project %}
+                    <a href="{% url 'bifrost:project-detail' project.pk %}" class="button is-light">Cancel</a>
+                    {% else %}
+                    <a href="{% url 'bifrost:project-list' %}" class="button is-light">Cancel</a>
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Auto-add Bulma input/textarea/select classes to Django form widgets
+    document.querySelectorAll('input[type=text], input[type=email]').forEach(el => {
+        el.classList.add('input');
+    });
+    document.querySelectorAll('textarea').forEach(el => {
+        el.classList.add('textarea');
+    });
+</script>
+{% endblock %}

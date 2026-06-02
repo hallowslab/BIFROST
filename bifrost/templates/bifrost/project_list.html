@@ -1,0 +1,136 @@
+{% extends "bifrost/base.html" %}
+
+{% block title %}Bifröst — Projects{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <div class="level">
+        <div class="level-left">
+            <h1 class="title">🌉 Projects</h1>
+        </div>
+        <div class="level-right">
+            <a href="{% url 'bifrost:project-create' %}" class="button is-info">
+                <span class="icon"><i class="fas fa-plus"></i></span>
+                <span>New Project</span>
+            </a>
+        </div>
+    </div>
+
+    {# Search / filter #}
+    <div class="box mb-5">
+        <form method="get" class="columns is-vcentered">
+            <div class="column">
+                <div class="field">
+                    <label class="label is-small">Search</label>
+                    <div class="control">
+                        <input class="input" type="text" name="q" value="{{ filter_form.q.value|default:'' }}"
+                            placeholder="Search projects…">
+                    </div>
+                </div>
+            </div>
+            <div class="column is-narrow">
+                <div class="field">
+                    <label class="label is-small">Status</label>
+                    <div class="control">
+                        <div class="select">
+                            <select name="status">
+                                <option value="">All statuses</option>
+                                {% for value, label in status_choices %}
+                                <option value="{{ value }}" {% if filter_form.status.value == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="column is-narrow" style="padding-top: 2rem;">
+                <button class="button is-info" type="submit">Filter</button>
+                <a href="{% url 'bifrost:project-list' %}" class="button is-light ml-2">Clear</a>
+            </div>
+        </form>
+    </div>
+
+    {# Project table #}
+    {% if page_obj.object_list %}
+    <div class="table-container">
+        <table class="table is-fullwidth is-hoverable is-striped">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Owner</th>
+                    <th>Tasks</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for project in page_obj.object_list %}
+                <tr>
+                    <td>
+                        <a href="{% url 'bifrost:project-detail' project.pk %}">
+                            <strong>{{ project.name }}</strong>
+                        </a>
+                    </td>
+                    <td>{{ project.display_type }}</td>
+                    <td>
+                        <span class="tag
+                            {% if project.status == 'in_progress' %}is-info
+                            {% elif project.status == 'completed' %}is-success
+                            {% elif project.status == 'blocked' %}is-danger
+                            {% elif project.status == 'planned' %}is-warning
+                            {% elif project.status == 'archived' %}is-light
+                            {% else %}is-light{% endif %}">
+                            {{ project.get_status_display }}
+                        </span>
+                    </td>
+                    <td>{{ project.owner.get_full_name|default:project.owner.username }}</td>
+                    <td>
+                        <span class="tag is-light">{{ project.tasks.count }}</span>
+                    </td>
+                    <td>{{ project.created_at|date:"Y-m-d" }}</td>
+                    <td>
+                        <a href="{% url 'bifrost:project-detail' project.pk %}" class="button is-small is-info">
+                            View
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {# Pagination #}
+    {% if page_obj.has_other_pages %}
+    <nav class="pagination is-centered mt-4" role="navigation" aria-label="pagination">
+        {% if page_obj.has_previous %}
+        <a class="pagination-previous"
+            href="?page={{ page_obj.previous_page_number }}&q={{ filter_form.q.value|default:'' }}&status={{ filter_form.status.value|default:'' }}">
+            Previous
+        </a>
+        {% else %}
+        <a class="pagination-previous" disabled>Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a class="pagination-next"
+            href="?page={{ page_obj.next_page_number }}&q={{ filter_form.q.value|default:'' }}&status={{ filter_form.status.value|default:'' }}">
+            Next
+        </a>
+        {% else %}
+        <a class="pagination-next" disabled>Next</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+    {% else %}
+    <div class="box">
+        <p>No projects found. <a href="{% url 'bifrost:project-create' %}">Create your first project</a>.</p>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

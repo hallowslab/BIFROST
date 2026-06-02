@@ -1,0 +1,83 @@
+{% extends "bifrost/base.html" %}
+
+{% block title %}Bifröst — Log Event{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <li><a href="{% url 'bifrost:project-list' %}">Projects</a></li>
+            <li><a href="{% url 'bifrost:project-detail' project.pk %}">{{ project.name }}</a></li>
+            <li class="is-active"><a href="#" aria-current="page">Log Event</a></li>
+        </ul>
+    </nav>
+
+    <h1 class="title">Log Event</h1>
+    <p class="subtitle is-6 mb-4">
+        Manually record an event on the project timeline.
+        System events (project created, task completed, etc.) are logged automatically.
+    </p>
+
+    <div class="box">
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="columns">
+                <div class="column is-narrow">
+                    <div class="field">
+                        <label class="label">Event Type <span class="has-text-danger">*</span></label>
+                        <div class="control">
+                            <div class="select">
+                                {{ form.event_type }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Title <span class="has-text-danger">*</span></label>
+                        <div class="control">
+                            {{ form.title }}
+                        </div>
+                        {% if form.title.errors %}
+                        <p class="help is-danger">{{ form.title.errors|join:", " }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Description</label>
+                <div class="control">
+                    {{ form.description }}
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Responsible At This Point</label>
+                <div class="control">
+                    <div class="select is-fullwidth">
+                        {{ form.assigned_to }}
+                    </div>
+                </div>
+                <p class="help">Who holds responsibility at the time of this event.</p>
+            </div>
+
+            <div class="field is-grouped mt-5">
+                <div class="control">
+                    <button class="button is-primary" type="submit">Log Event</button>
+                </div>
+                <div class="control">
+                    <a href="{% url 'bifrost:project-detail' project.pk %}#events" class="button is-light">Cancel</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.querySelectorAll('input[type=text]').forEach(el => el.classList.add('input'));
+    document.querySelectorAll('textarea').forEach(el => el.classList.add('textarea'));
+</script>
+{% endblock %}

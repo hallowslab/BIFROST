@@ -1,0 +1,370 @@
+{% extends "bifrost/base.html" %}
+
+{% block title %}Bifröst — {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    {# Breadcrumb #}
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <li><a href="{% url 'bifrost:project-list' %}">Projects</a></li>
+            <li class="is-active"><a href="#" aria-current="page">{{ project.name }}</a></li>
+        </ul>
+    </nav>
+
+    {# Header #}
+    <div class="level">
+        <div class="level-left">
+            <div>
+                <h1 class="title mb-1">{{ project.name }}</h1>
+                <p class="subtitle is-6">
+                    {{ project.display_type }}
+                    &nbsp;&middot;&nbsp;
+                    Owner: <strong>{{ project.owner.get_full_name|default:project.owner.username }}</strong>
+                    &nbsp;&middot;&nbsp;
+                    Created {{ project.created_at|date:"Y-m-d" }}
+                </p>
+            </div>
+        </div>
+        <div class="level-right">
+            <span class="tag is-medium mr-3
+                {% if project.status == 'in_progress' %}is-info
+                {% elif project.status == 'completed' %}is-success
+                {% elif project.status == 'blocked' %}is-danger
+                {% elif project.status == 'planned' %}is-warning
+                {% elif project.status == 'archived' %}is-light
+                {% else %}is-light{% endif %}">
+                {{ project.get_status_display }}
+            </span>
+            {% if can_manage_project %}
+            <a href="{% url 'bifrost:project-edit' project.pk %}" class="button is-info">
+                <span>Edit</span>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    {# Description #}
+    {% if project.description %}
+    <div class="box mb-5">
+        <p class="has-text-weight-semibold mb-1">Description</p>
+        <p>{{ project.description|linebreaksbr }}</p>
+    </div>
+    {% endif %}
+
+    {% if can_transfer_project %}
+    <div class="box mb-5">
+        <form method="post" action="{% url 'bifrost:project-transfer' project.pk %}">
+            {% csrf_token %}
+            <div class="columns is-vcentered">
+                <div class="column">
+                    <div class="field">
+                        <label class="label">Transfer project</label>
+                        <div class="control">
+                            <div class="select is-fullwidth">
+                                {{ transfer_form.owner }}
+                            </div>
+                        </div>
+                        <p class="help">Choose the new owner and submit to transfer management rights.</p>
+                    </div>
+                </div>
+                <div class="column is-narrow">
+                    <button type="submit" class="button is-warning mt-4">Transfer</button>
+                </div>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {# Tabs #}
+    <div class="tabs is-boxed">
+        <ul>
+            <li id="tab-tasks-li" class="is-active">
+                <a onclick="showTab('tasks')">
+                    <span class="icon is-small"><i class="fas fa-tasks"></i></span>
+                    <span>Tasks <span class="tag is-rounded is-small ml-1">{{ tasks|length }}</span></span>
+                </a>
+            </li>
+            <li id="tab-notes-li">
+                <a onclick="showTab('notes')">
+                    <span class="icon is-small"><i class="fas fa-sticky-note"></i></span>
+                    <span>Notes <span class="tag is-rounded is-small ml-1">{{ notes|length }}</span></span>
+                </a>
+            </li>
+            <li id="tab-events-li">
+                <a onclick="showTab('events')">
+                    <span class="icon is-small"><i class="fas fa-history"></i></span>
+                    <span>Timeline <span class="tag is-rounded is-small ml-1">{{ events|length }}</span></span>
+                </a>
+            </li>
+            <li id="tab-references-li">
+                <a onclick="showTab('references')">
+                    <span class="icon is-small"><i class="fas fa-link"></i></span>
+                    <span>References <span class="tag is-rounded is-small ml-1">{{ references|length }}</span></span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    {# === TASKS panel === #}
+    <div id="panel-tasks">
+        <div class="level mb-3">
+            <div class="level-left">
+                <p class="has-text-weight-semibold">Tasks</p>
+            </div>
+            <div class="level-right">
+                {% if can_manage_project %}
+                <a href="{% url 'bifrost:task-create' project.pk %}" class="button is-small is-primary">
+                    <span>Add Task</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% if tasks %}
+        <div class="table-container">
+            <table class="table is-fullwidth is-hoverable">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>Assigned To</th>
+                        <th>Created</th>
+                        <th>Completed</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in tasks %}
+                    <tr>
+                        <td>{{ task.title }}</td>
+                        <td>
+                            <span class="tag
+                                {% if task.status == 'completed' %}is-success
+                                {% elif task.status == 'in_progress' %}is-info
+                                {% elif task.status == 'cancelled' %}is-light
+                                {% else %}is-warning{% endif %}">
+                                {{ task.get_status_display }}
+                            </span>
+                        </td>
+                        <td>{{ task.assigned_to.get_full_name|default:task.assigned_to.username|default:"—" }}</td>
+                        <td>{{ task.created_at|date:"Y-m-d" }}</td>
+                        <td>{{ task.completed_at|date:"Y-m-d"|default:"—" }}</td>
+                        <td class="has-text-right">
+                            {% if can_manage_project or task.assigned_to_id == request.user.id %}
+                            <a href="{% url 'bifrost:task-edit' project.pk task.pk %}"
+                                class="button is-small is-light mr-1">Edit</a>
+                            {% if task.status != 'completed' and task.status != 'cancelled' %}
+                            <form method="post" action="{% url 'bifrost:task-complete' project.pk task.pk %}"
+                                style="display:inline" onsubmit="return confirm('Mark task as completed?')">
+                                {% csrf_token %}
+                                <button type="submit" class="button is-small is-success mr-1">Complete</button>
+                            </form>
+                            {% endif %}
+                            {% endif %}
+                            {% if project.owner == request.user or request.user.is_superuser %}
+                            <form method="post" action="{% url 'bifrost:task-delete' project.pk task.pk %}"
+                                style="display:inline" onsubmit="return confirm('Delete task &quot;{{ task.title }}&quot;?')">
+                                {% csrf_token %}
+                                <button type="submit" class="button is-small is-danger is-light">Delete</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="box">No tasks yet. <a href="{% url 'bifrost:task-create' project.pk %}">Add the first task</a>.
+        </div>
+        {% endif %}
+    </div>
+
+    {# === NOTES panel === #}
+    <div id="panel-notes" style="display:none">
+        <div class="level mb-3">
+            <div class="level-left">
+                <p class="has-text-weight-semibold">Notes</p>
+            </div>
+            <div class="level-right">
+                {% if can_manage_project %}
+                <a href="{% url 'bifrost:note-create' project.pk %}" class="button is-small is-primary">
+                    <span>Add Note</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% if notes %}
+        {% for note in notes %}
+        <div class="box mb-3">
+            <div class="level mb-2">
+                <div class="level-left">
+                    <p class="has-text-weight-semibold">{{ note.title }}</p>
+                </div>
+                <div class="level-right">
+                    <p class="is-size-7 has-text-grey">
+                        {{ note.author.get_full_name|default:note.author.username }}
+                        &middot; {{ note.created_at|date:"Y-m-d H:i" }}
+                    </p>
+                </div>
+            </div>
+            <p class="mb-3">{{ note.content|linebreaksbr }}</p>
+            {% if project.owner == request.user or request.user.is_superuser %}
+            <div class="has-text-right">
+                <form method="post" action="{% url 'bifrost:note-delete' project.pk note.pk %}"
+                    style="display:inline" onsubmit="return confirm('Delete note &quot;{{ note.title }}&quot;?')">
+                    {% csrf_token %}
+                    <button type="submit" class="button is-small is-danger is-light">Delete</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="box">No notes yet. <a href="{% url 'bifrost:note-create' project.pk %}">Add the
+                first note</a>.</div>
+        {% endif %}
+    </div>
+
+    {# === EVENTS / TIMELINE panel === #}
+    <div id="panel-events" style="display:none">
+        <div class="level mb-3">
+            <div class="level-left">
+                <p class="has-text-weight-semibold">Timeline</p>
+            </div>
+            <div class="level-right">
+                {% if request.user.is_superuser %}
+                <a href="{% url 'bifrost:event-create' project.pk %}" class="button is-small is-primary">
+                    <span>Log Event</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% if events %}
+        <div class="timeline">
+            {% for event in events %}
+            <div class="box mb-3">
+                <div class="level mb-1">
+                    <div class="level-left">
+                        <span class="tag
+                            {% if event.event_type == 'project_created' %}is-link
+                            {% elif event.event_type == 'project_completed' %}is-success
+                            {% elif event.event_type == 'project_transferred' %}is-info is-light
+                            {% elif event.event_type == 'task_completed' %}is-success is-light
+                            {% elif event.event_type == 'issue_identified' %}is-danger
+                            {% elif event.event_type == 'status_changed' %}is-warning
+                            {% elif event.event_type == 'note_added' %}is-info is-light
+                            {% else %}is-light{% endif %} mr-2">
+                            {{ event.get_event_type_display }}
+                        </span>
+                        <strong>{{ event.title }}</strong>
+                    </div>
+                    <div class="level-right">
+                        <p class="is-size-7 has-text-grey">{{ event.created_at|date:"Y-m-d H:i" }}</p>
+                    </div>
+                </div>
+                {% if event.description %}
+                <p class="is-size-7">{{ event.description }}</p>
+                {% endif %}
+                <p class="is-size-7 has-text-grey mt-1">
+                    {% if event.actor %}Actor: {{ event.actor.get_full_name|default:event.actor.username }}{% endif %}
+                    {% if event.assigned_to %}&nbsp;&middot;&nbsp;Responsible: {{
+                    event.assigned_to.get_full_name|default:event.assigned_to.username }}{% endif %}
+                </p>
+                {% if request.user.is_superuser %}
+                <div class="has-text-right mt-2">
+                    <form method="post" action="{% url 'bifrost:event-delete' project.pk event.pk %}"
+                        style="display:inline" onsubmit="return confirm('Delete timeline event &quot;{{ event.title }}&quot;?')">
+                        {% csrf_token %}
+                        <button type="submit" class="button is-small is-danger is-light">Delete</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="box">No timeline events yet.</div>
+        {% endif %}
+    </div>
+
+    {# === REFERENCES panel === #}
+    <div id="panel-references" style="display:none">
+        <div class="level mb-3">
+            <div class="level-left">
+                <p class="has-text-weight-semibold">References</p>
+            </div>
+            <div class="level-right">
+                {% if can_manage_project %}
+                <a href="{% url 'bifrost:reference-create' project.pk %}" class="button is-small is-primary">
+                    <span>Add Reference</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% if references %}
+        <div class="table-container">
+            <table class="table is-fullwidth is-hoverable">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Value</th>
+                        {% if project.owner == request.user or request.user.is_superuser %}
+                        <th></th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ref in references %}
+                    <tr>
+                        <td><span class="tag is-light">{{ ref.get_reference_type_display }}</span></td>
+                        <td><code>{{ ref.value }}</code></td>
+                        {% if project.owner == request.user or request.user.is_superuser %}
+                        <td class="has-text-right">
+                            <form method="post" action="{% url 'bifrost:reference-delete' project.pk ref.pk %}"
+                                style="display:inline" onsubmit="return confirm('Delete reference &quot;{{ ref.value }}&quot;?')">
+                                {% csrf_token %}
+                                <button type="submit" class="button is-small is-danger is-light">Delete</button>
+                            </form>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="box">No references yet. <a href="{% url 'bifrost:reference-create' project.pk %}">Add the first
+                reference</a>.</div>
+        {% endif %}
+    </div>
+
+    <div class="mt-5">
+        <a href="{% url 'bifrost:project-list' %}" class="button">
+            <span>Back to Projects</span>
+        </a>
+    </div>
+</div>
+
+<script>
+    const PANELS = ['tasks', 'notes', 'events', 'references'];
+
+    function showTab(name) {
+        PANELS.forEach(p => {
+            document.getElementById('panel-' + p).style.display = p === name ? '' : 'none';
+            document.getElementById('tab-' + p + '-li').classList.toggle('is-active', p === name);
+        });
+        // Persist selection in URL hash without reloading
+        history.replaceState(null, '', '#' + name);
+    }
+
+    // Restore tab from hash on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        const hash = window.location.hash.replace('#', '');
+        if (PANELS.includes(hash)) {
+            showTab(hash);
+        }
+    });
+</script>
+{% endblock %}

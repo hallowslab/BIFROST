@@ -1,0 +1,58 @@
+{% extends "bifrost/base.html" %}
+
+{% block title %}Bifröst — Add Note{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <li><a href="{% url 'bifrost:project-list' %}">Projects</a></li>
+            <li><a href="{% url 'bifrost:project-detail' project.pk %}">{{ project.name }}</a></li>
+            <li class="is-active"><a href="#" aria-current="page">Add Note</a></li>
+        </ul>
+    </nav>
+
+    <h1 class="title">Add Note</h1>
+
+    <div class="box">
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="field">
+                <label class="label">Title <span class="has-text-danger">*</span></label>
+                <div class="control">
+                    {{ form.title }}
+                </div>
+                {% if form.title.errors %}
+                <p class="help is-danger">{{ form.title.errors|join:", " }}</p>
+                {% endif %}
+            </div>
+
+            <div class="field">
+                <label class="label">Content <span class="has-text-danger">*</span></label>
+                <div class="control">
+                    {{ form.content }}
+                </div>
+                {% if form.content.errors %}
+                <p class="help is-danger">{{ form.content.errors|join:", " }}</p>
+                {% endif %}
+            </div>
+
+            <div class="field is-grouped mt-5">
+                <div class="control">
+                    <button class="button is-primary" type="submit">Save Note</button>
+                </div>
+                <div class="control">
+                    <a href="{% url 'bifrost:project-detail' project.pk %}#notes" class="button is-light">Cancel</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.querySelectorAll('input[type=text]').forEach(el => el.classList.add('input'));
+    document.querySelectorAll('textarea').forEach(el => el.classList.add('textarea'));
+</script>
+{% endblock %}
