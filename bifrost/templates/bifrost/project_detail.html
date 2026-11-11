@@ -86,6 +86,12 @@
                     <span>Tasks <span class="tag is-rounded is-small ml-1">{{ tasks|length }}</span></span>
                 </a>
             </li>
+            <li id="tab-issues-li">
+                <a onclick="showTab('issues')">
+                    <span class="icon is-small"><i class="fas fa-exclamation-triangle"></i></span>
+                    <span>Issues <span class="tag is-rounded is-small ml-1">{{ issues|length }}</span></span>
+                </a>
+            </li>
             <li id="tab-notes-li">
                 <a onclick="showTab('notes')">
                     <span class="icon is-small"><i class="fas fa-sticky-note"></i></span>
@@ -151,6 +157,8 @@
                         <td>{{ task.created_at|date:"Y-m-d" }}</td>
                         <td>{{ task.completed_at|date:"Y-m-d"|default:"—" }}</td>
                         <td class="has-text-right">
+                            <a href="{% url 'bifrost:task-detail' project.pk task.pk %}"
+                                class="button is-small is-light mr-1">Steps</a>
                             {% if can_manage_project or task.assigned_to_id == request.user.id %}
                             <a href="{% url 'bifrost:task-edit' project.pk task.pk %}"
                                 class="button is-small is-light mr-1">Edit</a>
@@ -178,6 +186,141 @@
         {% else %}
         <div class="box">No tasks yet. <a href="{% url 'bifrost:task-create' project.pk %}">Add the first task</a>.
         </div>
+        {% endif %}
+    </div>
+
+    {# === ISSUES panel === #}
+    <div id="panel-issues" style="display:none">
+        <div class="level mb-3">
+            <div class="level-left">
+                <p class="has-text-weight-semibold">Issues</p>
+            </div>
+            <div class="level-right">
+                {% if can_manage_project %}
+                <a href="{% url 'bifrost:issue-create' project.pk %}" class="button is-small is-danger is-light">
+                    <span>Identify Issue</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% if issues %}
+        {% for issue in issues %}
+        <div class="box mb-3">
+            <div class="level">
+                <div class="level-left">
+                    <div>
+                        <p class="has-text-weight-semibold">{{ issue.title }}</p>
+                        <p class="is-size-7 has-text-grey">
+                            {{ issue.identified_by.get_full_name|default:issue.identified_by.username }}
+                            &middot; {{ issue.created_at|date:"Y-m-d" }}
+                        </p>
+                    </div>
+                </div>
+                <div class="level-right">
+                    <span class="tag mr-2
+                        {% if issue.status == 'identified' %}is-danger
+                        {% elif issue.status == 'investigating' %}is-warning
+                        {% elif issue.status == 'resolved' %}is-info
+                        {% elif issue.status == 'closed' %}is-success
+                        {% endif %}">
+                        {{ issue.get_status_display }}
+                    </span>
+                    {% if issue.status == 'identified' or issue.status == 'investigating' %}
+                    {% if can_manage_project %}
+                    <a href="{% url 'bifrost:issue-resolve' project.pk issue.pk %}"
+                        class="button is-small is-success">Resolve</a>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+            {% if issue.description %}
+            <p class="mb-3 is-size-7">{{ issue.description|linebreaksbr }}</p>
+            {% endif %}
+
+            {% if issue.tasks.all %}
+            <div class="mb-2">
+                <span class="is-size-7 has-text-weight-semibold">Linked Tasks:</span>
+                {% for linked_task in issue.tasks.all %}
+                <span class="tag is-light is-small">{{ linked_task.title }}</span>
+                {% if can_manage_project %}
+                <form method="post" action="{% url 'bifrost:issue-unlink-task' project.pk issue.pk linked_task.pk %}"
+                    style="display:inline" onsubmit="return confirm('Unlink task?')">
+                    {% csrf_token %}
+                    <button type="submit" class="button is-small is-danger is-light" style="height:1.5em;padding:0 0.5em">&times;</button>
+                </form>
+                {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if can_manage_project %}
+            <form method="post" action="{% url 'bifrost:issue-link-task' project.pk issue.pk %}"
+                style="display:inline" class="mb-2">
+                {% csrf_token %}
+                <div class="field has-addons" style="display:inline-flex">
+                    <div class="control">
+                        <div class="select is-small">
+                            <select name="task">
+                                <option value="">Link a task...</option>
+                                {% for t in tasks %}
+                                <option value="{{ t.pk }}">{{ t.title }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="control">
+                        <button type="submit" class="button is-small is-info">Link</button>
+                    </div>
+                </div>
+            </form>
+            {% endif %}
+
+            {% if issue.resolutions.all %}
+            <a class="is-size-7" onclick="toggleResolutions('{{ issue.id }}')" style="cursor:pointer">
+                {{ issue.resolutions.count }} resolution{{ issue.resolutions.count|pluralize }} &darr;
+            </a>
+            <div id="resolutions-{{ issue.id }}" style="display:none" class="mt-2">
+                {% for resolution in issue.resolutions.all %}
+                <div class="box mb-2 is-shadowless" style="border-left: 3px solid #48c774;">
+                    <div class="level mb-1">
+                        <div class="level-left">
+                            <span class="is-size-7 has-text-weight-semibold">Resolution {{ forloop.counter }}</span>
+                        </div>
+                        <div class="level-right">
+                            <span class="is-size-7 has-text-grey">
+                                {{ resolution.created_by.get_full_name|default:resolution.created_by.username }}
+                                &middot; {{ resolution.created_at|date:"Y-m-d H:i" }}
+                            </span>
+                        </div>
+                    </div>
+                    <p class="is-size-7">{{ resolution.description|linebreaksbr }}</p>
+                    {% if resolution.steps.all %}
+                    <table class="table is-narrow is-fullwidth mt-2 is-size-7">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Step</th>
+                                <th>Done</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for step in resolution.steps.all %}
+                            <tr>
+                                <td>{{ step.order }}</td>
+                                <td>{{ step.description }}</td>
+                                <td>{% if step.completed %}&check;{% else %}&mdash;{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="box">No issues identified. <a href="{% url 'bifrost:issue-create' project.pk %}">Identify the first issue</a>.</div>
         {% endif %}
     </div>
 
@@ -348,7 +491,12 @@
 </div>
 
 <script>
-    const PANELS = ['tasks', 'notes', 'events', 'references'];
+    const PANELS = ['tasks', 'issues', 'notes', 'events', 'references'];
+
+    function toggleResolutions(id) {
+        const el = document.getElementById('resolutions-' + id);
+        if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+    }
 
     function showTab(name) {
         PANELS.forEach(p => {

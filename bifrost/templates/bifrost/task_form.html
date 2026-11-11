@@ -36,6 +36,18 @@
                 </div>
             </div>
 
+            {% if form.task_template %}
+            <div class="field">
+                <label class="label">{{ form.task_template.label }}</label>
+                <div class="control">
+                    <div class="select is-fullwidth">
+                        {{ form.task_template }}
+                    </div>
+                </div>
+                <p class="help">{{ form.task_template.help_text }}</p>
+            </div>
+            {% endif %}
+
             <div class="columns">
                 <div class="column is-narrow">
                     <div class="field">

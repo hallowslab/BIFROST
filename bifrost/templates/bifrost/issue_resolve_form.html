@@ -1,0 +1,48 @@
+{% extends "bifrost/base.html" %}
+
+{% block title %}Bifröst — Resolve Issue{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <li><a href="{% url 'bifrost:project-list' %}">Projects</a></li>
+            <li><a href="{% url 'bifrost:project-detail' project.pk %}">{{ project.name }}</a></li>
+            <li class="is-active"><a href="#" aria-current="page">Resolve Issue</a></li>
+        </ul>
+    </nav>
+
+    <h1 class="title">Resolve Issue: {{ issue.title }}</h1>
+
+    <div class="box">
+        <form method="post">
+            {% csrf_token %}
+
+            <div class="field">
+                <label class="label">Resolution Description <span class="has-text-danger">*</span></label>
+                <div class="control">
+                    {{ form.description }}
+                </div>
+                {% if form.description.errors %}
+                <p class="help is-danger">{{ form.description.errors|join:", " }}</p>
+                {% endif %}
+                <p class="help">Describe what was done to resolve this issue.</p>
+            </div>
+
+            <div class="field is-grouped mt-5">
+                <div class="control">
+                    <button class="button is-success" type="submit">Resolve Issue</button>
+                </div>
+                <div class="control">
+                    <a href="{% url 'bifrost:project-detail' project.pk %}#issues" class="button is-light">Cancel</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.querySelectorAll('textarea').forEach(el => el.classList.add('textarea'));
+</script>
+{% endblock %}

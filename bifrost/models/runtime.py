@@ -5,17 +5,7 @@ from django.db import models
 from django.utils.text import slugify
 
 
-# ---------------------------------------------------------------------------
-# Admin-managed project type catalogue
-# ---------------------------------------------------------------------------
-
-
 class ProjectType(models.Model):
-    """
-    Admin-managed catalogue of project types.
-    New entries can be added through the Django admin without code changes.
-    """
-
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=120, unique=True, blank=True)
 
@@ -31,11 +21,6 @@ class ProjectType(models.Model):
 
     def __str__(self):
         return self.name
-
-
-# ---------------------------------------------------------------------------
-# Choices
-# ---------------------------------------------------------------------------
 
 
 class ProjectStatus(models.TextChoices):
@@ -54,6 +39,13 @@ class TaskStatus(models.TextChoices):
     CANCELLED = "cancelled", "Cancelled"
 
 
+class IssueStatus(models.TextChoices):
+    IDENTIFIED = "identified", "Identified"
+    INVESTIGATING = "investigating", "Investigating"
+    RESOLVED = "resolved", "Resolved"
+    CLOSED = "closed", "Closed"
+
+
 class EventType(models.TextChoices):
     PROJECT_CREATED = "project_created", "Project Created"
     PROJECT_COMPLETED = "project_completed", "Project Completed"
@@ -61,7 +53,11 @@ class EventType(models.TextChoices):
     TASK_CREATED = "task_created", "Task Created"
     TASK_COMPLETED = "task_completed", "Task Completed"
     TASK_DELETED = "task_deleted", "Task Deleted"
+    TASK_ASSIGNED = "task_assigned", "Task Assigned"
     ISSUE_IDENTIFIED = "issue_identified", "Issue Identified"
+    ISSUE_RESOLVED = "issue_resolved", "Issue Resolved"
+    ISSUE_CLOSED = "issue_closed", "Issue Closed"
+    RESOLUTION_APPLIED = "resolution_applied", "Resolution Applied"
     STATUS_CHANGED = "status_changed", "Status Changed"
     NOTE_ADDED = "note_added", "Note Added"
     NOTE_DELETED = "note_deleted", "Note Deleted"
@@ -78,20 +74,7 @@ class ReferenceType(models.TextChoices):
     OTHER = "other", "Other"
 
 
-# ---------------------------------------------------------------------------
-# Core models
-# ---------------------------------------------------------------------------
-
-
 class Project(models.Model):
-    """
-    Central unit of work in Bifrost.
-
-    project_type links to the admin-managed ProjectType catalogue.
-    project_type_custom allows a free-text override when the predefined
-    list does not cover an edge case.
-    """
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     project_type = models.ForeignKey(
@@ -119,6 +102,14 @@ class Project(models.Model):
         related_name="owned_projects",
     )
     description = models.TextField(blank=True, null=True)
+    project_template = models.ForeignKey(
+        "ProjectTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="projects",
+        help_text="Optional template this project was created from.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -134,22 +125,14 @@ class Project(models.Model):
 
     @property
     def display_type(self) -> str:
-        """Return the effective project type label for display."""
         if self.project_type_custom:
             return self.project_type_custom
         if self.project_type:
             return self.project_type.name
-        return "—"
+        return "\u2014"
 
 
 class Task(models.Model):
-    """
-    Actionable work item belonging to a Project.
-
-    assigned_to represents current responsibility.
-    completed_at is set by the service layer when status → COMPLETED.
-    """
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(
         Project,
@@ -172,6 +155,14 @@ class Task(models.Model):
         related_name="assigned_tasks",
         help_text="Who currently holds responsibility for this task.",
     )
+    task_template = models.ForeignKey(
+        "TaskTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tasks",
+        help_text="Optional template this task was derived from.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -185,12 +176,111 @@ class Task(models.Model):
         return f"{self.title} [{self.get_status_display()}]"
 
 
-class Note(models.Model):
-    """
-    Operational knowledge store for a Project.
-    Used for observations, decisions, technical context, and history.
-    """
+class TaskStep(models.Model):
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name="steps",
+    )
+    order = models.PositiveIntegerField()
+    description = models.TextField()
+    completed = models.BooleanField(default=False)
 
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return f"Step {self.order}: {self.description[:60]}"
+
+
+class Issue(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="issues",
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    status = models.CharField(
+        max_length=20,
+        choices=IssueStatus.choices,
+        default=IssueStatus.IDENTIFIED,
+        db_index=True,
+    )
+    identified_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="identified_issues",
+    )
+    issue_template = models.ForeignKey(
+        "IssueTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="issues",
+        help_text="Optional template this issue matches.",
+    )
+    tasks = models.ManyToManyField(
+        "Task",
+        blank=True,
+        related_name="issues",
+        help_text="Tasks in this project that this issue is linked to.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["project", "status"]),
+            models.Index(fields=["status", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title} [{self.get_status_display()}]"
+
+
+class Resolution(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    issue = models.ForeignKey(
+        Issue,
+        on_delete=models.CASCADE,
+        related_name="resolutions",
+    )
+    description = models.TextField()
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="resolutions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Resolution for {self.issue.title}"
+
+
+class ResolutionStep(models.Model):
+    resolution = models.ForeignKey(
+        Resolution,
+        on_delete=models.CASCADE,
+        related_name="steps",
+    )
+    order = models.PositiveIntegerField()
+    description = models.TextField()
+    completed = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["order"]
+
+    def __str__(self):
+        return f"Step {self.order}: {self.description[:60]}"
+
+
+class Note(models.Model):
     id = models.BigAutoField(primary_key=True)
     project = models.ForeignKey(
         Project,
@@ -214,16 +304,6 @@ class Note(models.Model):
 
 
 class Event(models.Model):
-    """
-    Immutable timeline entry for a Project.
-
-    actor  — the user who performed the action.
-    assigned_to — who held responsibility at the time of the event.
-
-    Events should only be created through the services layer to preserve
-    a clean audit trail.
-    """
-
     id = models.BigAutoField(primary_key=True)
     project = models.ForeignKey(
         Project,
@@ -264,15 +344,10 @@ class Event(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.get_event_type_display()} — {self.title}"
+        return f"{self.get_event_type_display()} \u2014 {self.title}"
 
 
 class Reference(models.Model):
-    """
-    Link to an external system or identifier for a Project.
-    Examples: WHMCS tickets, Git repositories, customer IDs.
-    """
-
     id = models.BigAutoField(primary_key=True)
     project = models.ForeignKey(
         Project,

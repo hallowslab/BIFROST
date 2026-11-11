@@ -1,32 +1,39 @@
-from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .forms import (
+from .. import permissions
+from .. import services
+from ..forms.runtime import (
     EventForm,
+    IssueForm,
+    IssueLinkTaskForm,
     NoteForm,
     ProjectEditForm,
     ProjectFilterForm,
     ProjectForm,
     ProjectTransferForm,
     ReferenceForm,
+    ResolutionForm,
     TaskForm,
+    TaskStepForm,
 )
-from .models import Project, ProjectStatus, Task, Note, Event, Reference
-from . import services
-from . import permissions
-
-
-# ---------------------------------------------------------------------------
-# Project views
-# ---------------------------------------------------------------------------
+from ..models.runtime import (
+    Event,
+    Issue,
+    Note,
+    Project,
+    ProjectStatus,
+    Reference,
+    Task,
+    TaskStep,
+)
 
 
 @login_required
 def project_list(request: HttpRequest) -> HttpResponse:
-    """List all projects, with search and status filter."""
     form = ProjectFilterForm(request.GET)
     projects = permissions.visible_projects_for(request.user)
 
@@ -57,7 +64,6 @@ def project_list(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def project_create(request: HttpRequest) -> HttpResponse | HttpResponseRedirect:
-    """Create a new project via service layer."""
     if request.method == "POST":
         form = ProjectForm(request.POST)
         if form.is_valid():
@@ -70,10 +76,12 @@ def project_create(request: HttpRequest) -> HttpResponse | HttpResponseRedirect:
                 status=d.get("status", ProjectStatus.DRAFT),
                 description=d.get("description") or None,
             )
+            if d.get("project_template"):
+                project.project_template = d["project_template"]
+                project.save(update_fields=["project_template"])
             messages.success(request, f'Project "{project.name}" created.')
             return redirect("bifrost:project-detail", pk=project.pk)
     else:
-        # Pre-fill owner with current user
         form = ProjectForm(initial={"owner": request.user})
 
     return render(request, "bifrost/project_form.html", {"form": form, "action": "Create"})
@@ -81,13 +89,15 @@ def project_create(request: HttpRequest) -> HttpResponse | HttpResponseRedirect:
 
 @login_required
 def project_detail(request: HttpRequest, pk) -> HttpResponse:
-    """Show a project and all its tasks, notes, events, and references."""
     project = get_object_or_404(permissions.visible_projects_for(request.user), pk=pk)
     if not permissions.can_view_project(request.user, project):
         messages.error(request, "You do not have permission to view this project.")
         return redirect("bifrost:project-list")
 
     tasks = project.tasks.select_related("assigned_to").order_by("-created_at")
+    issues = project.issues.select_related("identified_by").prefetch_related(
+        "resolutions__steps"
+    ).order_by("-created_at")
     notes = project.notes.select_related("author").order_by("-created_at")
     events = project.events.select_related("actor", "assigned_to").order_by("-created_at")
     references = project.references.order_by("reference_type", "value")
@@ -98,6 +108,7 @@ def project_detail(request: HttpRequest, pk) -> HttpResponse:
         {
             "project": project,
             "tasks": tasks,
+            "issues": issues,
             "notes": notes,
             "events": events,
             "references": references,
@@ -110,7 +121,6 @@ def project_detail(request: HttpRequest, pk) -> HttpResponse:
 
 @login_required
 def project_edit(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect:
-    """Edit a project's details. Status changes go through the service layer."""
     project = get_object_or_404(Project, pk=pk)
     if not permissions.can_manage_project(request.user, project):
         messages.error(request, "You do not have permission to edit this project.")
@@ -143,7 +153,6 @@ def project_edit(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirec
 
 @login_required
 def project_transfer(request: HttpRequest, pk) -> HttpResponseRedirect:
-    """Transfer project ownership to another user."""
     if request.method != "POST":
         return redirect("bifrost:project-detail", pk=pk)
 
@@ -163,14 +172,8 @@ def project_transfer(request: HttpRequest, pk) -> HttpResponseRedirect:
     return redirect("bifrost:project-list")
 
 
-# ---------------------------------------------------------------------------
-# Task views
-# ---------------------------------------------------------------------------
-
-
 @login_required
 def task_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect:
-    """Create a task for a project."""
     project = get_object_or_404(Project, pk=pk)
     if not permissions.can_manage_project(request.user, project):
         messages.error(request, "You do not have permission to add tasks to this project.")
@@ -180,7 +183,7 @@ def task_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect
         form = TaskForm(request.POST)
         if form.is_valid():
             d = form.cleaned_data
-            services.create_task(
+            task = services.create_task(
                 project=project,
                 title=d["title"],
                 actor=request.user,
@@ -188,6 +191,9 @@ def task_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect
                 status=d.get("status"),
                 assigned_to=d.get("assigned_to"),
             )
+            if d.get("task_template"):
+                task.task_template = d["task_template"]
+                task.save(update_fields=["task_template"])
             messages.success(request, f'Task "{d["title"]}" created.')
             return redirect("bifrost:project-detail", pk=project.pk)
     else:
@@ -202,7 +208,6 @@ def task_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect
 
 @login_required
 def task_edit(request: HttpRequest, pk, task_pk) -> HttpResponse | HttpResponseRedirect:
-    """Edit an existing task."""
     project = get_object_or_404(permissions.visible_projects_for(request.user), pk=pk)
     task = get_object_or_404(Task, pk=task_pk, project=project)
 
@@ -238,7 +243,6 @@ def task_edit(request: HttpRequest, pk, task_pk) -> HttpResponse | HttpResponseR
 def task_complete(
     request: HttpRequest, pk, task_pk
 ) -> HttpResponseRedirect:
-    """Mark a task as completed (POST only)."""
     if request.method != "POST":
         return redirect("bifrost:project-detail", pk=pk)
 
@@ -254,14 +258,72 @@ def task_complete(
     return redirect("bifrost:project-detail", pk=project.pk)
 
 
-# ---------------------------------------------------------------------------
-# Note views
-# ---------------------------------------------------------------------------
+@login_required
+def issue_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect:
+    project = get_object_or_404(Project, pk=pk)
+    if not permissions.can_manage_project(request.user, project):
+        messages.error(request, "You do not have permission to add issues to this project.")
+        return redirect("bifrost:project-detail", pk=project.pk)
+
+    if request.method == "POST":
+        form = IssueForm(request.POST)
+        if form.is_valid():
+            d = form.cleaned_data
+            issue = services.create_issue(
+                project=project,
+                title=d["title"],
+                identified_by=d.get("identified_by") or request.user,
+                description=d.get("description") or None,
+                status=d.get("status"),
+            )
+            if d.get("issue_template"):
+                issue.issue_template = d["issue_template"]
+                issue.save(update_fields=["issue_template"])
+            messages.success(request, f'Issue "{d["title"]}" identified.')
+            return redirect("bifrost:project-detail", pk=project.pk)
+    else:
+        form = IssueForm(initial={"identified_by": request.user})
+
+    return render(
+        request,
+        "bifrost/issue_form.html",
+        {"form": form, "project": project, "action": "Identify Issue"},
+    )
+
+
+@login_required
+def issue_resolve(
+    request: HttpRequest, pk, issue_pk
+) -> HttpResponse | HttpResponseRedirect:
+    project = get_object_or_404(Project, pk=pk)
+    issue = get_object_or_404(Issue, pk=issue_pk, project=project)
+
+    if not permissions.can_manage_project(request.user, project):
+        messages.error(request, "You do not have permission to resolve issues.")
+        return redirect("bifrost:project-detail", pk=project.pk)
+
+    if request.method == "POST":
+        form = ResolutionForm(request.POST)
+        if form.is_valid():
+            services.create_resolution(
+                issue=issue,
+                description=form.cleaned_data["description"],
+                created_by=request.user,
+            )
+            messages.success(request, f'Issue "{issue.title}" resolved.')
+            return redirect("bifrost:project-detail", pk=project.pk)
+    else:
+        form = ResolutionForm()
+
+    return render(
+        request,
+        "bifrost/issue_resolve_form.html",
+        {"form": form, "project": project, "issue": issue},
+    )
 
 
 @login_required
 def note_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect:
-    """Add a note to a project."""
     project = get_object_or_404(Project, pk=pk)
     if project.owner != request.user and not request.user.is_superuser:
         messages.error(request, "You do not have permission to add notes to this project.")
@@ -289,14 +351,8 @@ def note_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect
     )
 
 
-# ---------------------------------------------------------------------------
-# Event views
-# ---------------------------------------------------------------------------
-
-
 @login_required
 def event_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect:
-    """Manually create an event for a project."""
     project = get_object_or_404(Project, pk=pk)
     if not request.user.is_superuser:
         messages.error(request, "Only admins can manually log timeline events.")
@@ -326,14 +382,8 @@ def event_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirec
     )
 
 
-# ---------------------------------------------------------------------------
-# Reference views
-# ---------------------------------------------------------------------------
-
-
 @login_required
 def reference_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRedirect:
-    """Add an external reference to a project."""
     project = get_object_or_404(Project, pk=pk)
     if project.owner != request.user and not request.user.is_superuser:
         messages.error(
@@ -363,14 +413,8 @@ def reference_create(request: HttpRequest, pk) -> HttpResponse | HttpResponseRed
     )
 
 
-# ---------------------------------------------------------------------------
-# Deletion views
-# ---------------------------------------------------------------------------
-
-
 @login_required
 def task_delete(request: HttpRequest, pk, task_pk) -> HttpResponseRedirect:
-    """Delete an existing task."""
     if request.method != "POST":
         return redirect("bifrost:project-detail", pk=pk)
 
@@ -388,7 +432,6 @@ def task_delete(request: HttpRequest, pk, task_pk) -> HttpResponseRedirect:
 
 @login_required
 def note_delete(request: HttpRequest, pk, note_pk) -> HttpResponseRedirect:
-    """Delete an existing note."""
     if request.method != "POST":
         return redirect("bifrost:project-detail", pk=pk)
 
@@ -406,7 +449,6 @@ def note_delete(request: HttpRequest, pk, note_pk) -> HttpResponseRedirect:
 
 @login_required
 def reference_delete(request: HttpRequest, pk, ref_pk) -> HttpResponseRedirect:
-    """Delete an existing reference."""
     if request.method != "POST":
         return redirect("bifrost:project-detail", pk=pk)
 
@@ -424,7 +466,6 @@ def reference_delete(request: HttpRequest, pk, ref_pk) -> HttpResponseRedirect:
 
 @login_required
 def event_delete(request: HttpRequest, pk, event_pk) -> HttpResponseRedirect:
-    """Delete an existing timeline event (admin only)."""
     if request.method != "POST":
         return redirect("bifrost:project-detail", pk=pk)
 
@@ -437,4 +478,122 @@ def event_delete(request: HttpRequest, pk, event_pk) -> HttpResponseRedirect:
 
     services.delete_event(event=event)
     messages.success(request, "Event deleted.")
+    return redirect("bifrost:project-detail", pk=project.pk)
+
+
+@login_required
+def task_detail(request: HttpRequest, pk, task_pk) -> HttpResponse | HttpResponseRedirect:
+    project = get_object_or_404(permissions.visible_projects_for(request.user), pk=pk)
+    task = get_object_or_404(Task, pk=task_pk, project=project)
+    steps = task.steps.order_by("order")
+
+    if request.method == "POST":
+        form = TaskStepForm(request.POST)
+        if form.is_valid():
+            step = form.save(commit=False)
+            step.task = task
+            step.save()
+            messages.success(request, "Step added.")
+            return redirect("bifrost:task-detail", pk=project.pk, task_pk=task.pk)
+    else:
+        form = TaskStepForm()
+
+    return render(
+        request,
+        "bifrost/task_detail.html",
+        {
+            "project": project,
+            "task": task,
+            "steps": steps,
+            "form": form,
+            "can_edit": permissions.can_edit_task(request.user, task),
+        },
+    )
+
+
+@login_required
+def task_step_edit(
+    request: HttpRequest, pk, task_pk, step_pk
+) -> HttpResponse | HttpResponseRedirect:
+    project = get_object_or_404(permissions.visible_projects_for(request.user), pk=pk)
+    task = get_object_or_404(Task, pk=task_pk, project=project)
+    step = get_object_or_404(TaskStep, pk=step_pk, task=task)
+
+    if not permissions.can_edit_task(request.user, task):
+        messages.error(request, "You do not have permission to edit this task.")
+        return redirect("bifrost:task-detail", pk=project.pk, task_pk=task.pk)
+
+    if request.method == "POST":
+        form = TaskStepForm(request.POST, instance=step)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Step updated.")
+            return redirect("bifrost:task-detail", pk=project.pk, task_pk=task.pk)
+    else:
+        form = TaskStepForm(instance=step)
+
+    return render(
+        request,
+        "bifrost/task_step_form.html",
+        {"form": form, "project": project, "task": task, "step": step},
+    )
+
+
+@login_required
+def task_step_delete(
+    request: HttpRequest, pk, task_pk, step_pk
+) -> HttpResponseRedirect:
+    if request.method != "POST":
+        return redirect("bifrost:task-detail", pk=pk, task_pk=task_pk)
+
+    project = get_object_or_404(permissions.visible_projects_for(request.user), pk=pk)
+    task = get_object_or_404(Task, pk=task_pk, project=project)
+    step = get_object_or_404(TaskStep, pk=step_pk, task=task)
+
+    if not permissions.can_edit_task(request.user, task):
+        messages.error(request, "You do not have permission to edit this task.")
+        return redirect("bifrost:task-detail", pk=project.pk, task_pk=task.pk)
+
+    step.delete()
+    messages.success(request, "Step deleted.")
+    return redirect("bifrost:task-detail", pk=project.pk, task_pk=task.pk)
+
+
+@login_required
+def issue_link_task(
+    request: HttpRequest, pk, issue_pk
+) -> HttpResponse | HttpResponseRedirect:
+    project = get_object_or_404(Project, pk=pk)
+    issue = get_object_or_404(Issue, pk=issue_pk, project=project)
+
+    if not permissions.can_manage_project(request.user, project):
+        messages.error(request, "You do not have permission to link tasks.")
+        return redirect("bifrost:project-detail", pk=project.pk)
+
+    if request.method == "POST":
+        form = IssueLinkTaskForm(request.POST, project=project)
+        if form.is_valid():
+            task = form.cleaned_data["task"]
+            issue.tasks.add(task)
+            messages.success(request, f'Task "{task.title}" linked to issue.')
+    return redirect("bifrost:project-detail", pk=project.pk)
+
+
+@login_required
+def issue_unlink_task(
+    request: HttpRequest, pk, issue_pk, task_pk
+) -> HttpResponseRedirect:
+    if request.method != "POST":
+        return redirect("bifrost:project-detail", pk=pk)
+
+    project = get_object_or_404(Project, pk=pk)
+    issue = get_object_or_404(Issue, pk=issue_pk, project=project)
+    task = get_object_or_404(Task, pk=task_pk, project=project)
+
+    if not permissions.can_manage_project(request.user, project):
+        messages.error(request, "You do not have permission to unlink tasks.")
+        return redirect("bifrost:project-detail", pk=project.pk)
+
+    issue.tasks.remove(task)
+    messages.success(request, f'Task "{task.title}" unlinked from issue.')
     return redirect("bifrost:project-detail", pk=project.pk)

@@ -1,19 +1,32 @@
 from django import forms
 from django.contrib.auth.models import User
 
-from .models import (
+from ..models.knowledge import IssueTemplate, ProjectTemplate, TaskTemplate
+from ..models.runtime import (
     Event,
     EventType,
+    Issue,
+    IssueStatus,
     Note,
     Project,
     ProjectStatus,
     Reference,
+    Resolution,
     Task,
+    TaskStep,
     TaskStatus,
 )
 
 
 class ProjectForm(forms.ModelForm):
+    project_template = forms.ModelChoiceField(
+        queryset=ProjectTemplate.objects.order_by("name"),
+        required=False,
+        label="From Template",
+        help_text="Optional: link this project to a template.",
+        widget=forms.Select(attrs={"class": "select is-fullwidth"}),
+    )
+
     class Meta:
         model = Project
         fields = [
@@ -37,8 +50,6 @@ class ProjectForm(forms.ModelForm):
 
 
 class ProjectEditForm(forms.ModelForm):
-    """Lighter form used on the edit page — excludes owner."""
-
     class Meta:
         model = Project
         fields = [
@@ -64,7 +75,28 @@ class ProjectTransferForm(forms.Form):
     )
 
 
+class ProjectFilterForm(forms.Form):
+    q = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"placeholder": "Search projects\u2026"}),
+        label="Search",
+    )
+    status = forms.ChoiceField(
+        required=False,
+        choices=[("", "All statuses")] + ProjectStatus.choices,
+        label="Status",
+    )
+
+
 class TaskForm(forms.ModelForm):
+    task_template = forms.ModelChoiceField(
+        queryset=TaskTemplate.objects.select_related("project_template").order_by("title"),
+        required=False,
+        label="From Template",
+        help_text="Optional: link this task to a template.",
+        widget=forms.Select(attrs={"class": "select is-fullwidth"}),
+    )
+
     class Meta:
         model = Task
         fields = ["title", "description", "status", "assigned_to"]
@@ -75,12 +107,48 @@ class TaskForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Hide COMPLETED and CANCELLED from creation form
         if not self.instance.pk:
             self.fields["status"].choices = [
                 (TaskStatus.PENDING, "Pending"),
                 (TaskStatus.IN_PROGRESS, "In Progress"),
             ]
+
+
+class IssueForm(forms.ModelForm):
+    issue_template = forms.ModelChoiceField(
+        queryset=IssueTemplate.objects.order_by("title"),
+        required=False,
+        label="From Template",
+        help_text="Optional: link this issue to a template.",
+        widget=forms.Select(attrs={"class": "select is-fullwidth"}),
+    )
+
+    class Meta:
+        model = Issue
+        fields = ["title", "description", "status", "identified_by"]
+        widgets = {
+            "title": forms.TextInput(attrs={"placeholder": "Issue title"}),
+            "description": forms.Textarea(attrs={"rows": 4}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.instance.pk:
+            self.fields["status"].choices = [
+                (IssueStatus.IDENTIFIED, "Identified"),
+                (IssueStatus.INVESTIGATING, "Investigating"),
+            ]
+
+
+class ResolutionForm(forms.ModelForm):
+    class Meta:
+        model = Resolution
+        fields = ["description"]
+        widgets = {
+            "description": forms.Textarea(
+                attrs={"rows": 4, "placeholder": "Describe the resolution..."}
+            ),
+        }
 
 
 class NoteForm(forms.ModelForm):
@@ -94,8 +162,6 @@ class NoteForm(forms.ModelForm):
 
 
 class EventForm(forms.ModelForm):
-    """Manually-created events (auto-events come from services)."""
-
     class Meta:
         model = Event
         fields = ["event_type", "title", "description", "assigned_to"]
@@ -106,7 +172,6 @@ class EventForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Auto-events should not be manually created via the UI
         excluded = {
             EventType.PROJECT_CREATED,
             EventType.PROJECT_COMPLETED,
@@ -122,6 +187,28 @@ class EventForm(forms.ModelForm):
         ]
 
 
+class TaskStepForm(forms.ModelForm):
+    class Meta:
+        model = TaskStep
+        fields = ["order", "description", "completed"]
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 2}),
+        }
+
+
+class IssueLinkTaskForm(forms.Form):
+    task = forms.ModelChoiceField(
+        queryset=Task.objects.none(),
+        label="Task",
+    )
+
+    def __init__(self, *args, **kwargs):
+        project = kwargs.pop("project", None)
+        super().__init__(*args, **kwargs)
+        if project:
+            self.fields["task"].queryset = Task.objects.filter(project=project).order_by("title")
+
+
 class ReferenceForm(forms.ModelForm):
     class Meta:
         model = Reference
@@ -129,18 +216,3 @@ class ReferenceForm(forms.ModelForm):
         widgets = {
             "value": forms.TextInput(attrs={"placeholder": "Reference value or URL"}),
         }
-
-
-class ProjectFilterForm(forms.Form):
-    """Search/filter form for the project list."""
-
-    q = forms.CharField(
-        required=False,
-        widget=forms.TextInput(attrs={"placeholder": "Search projects…"}),
-        label="Search",
-    )
-    status = forms.ChoiceField(
-        required=False,
-        choices=[("", "All statuses")] + ProjectStatus.choices,
-        label="Status",
-    )

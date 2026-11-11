@@ -1,0 +1,51 @@
+{% extends "bifrost/base.html" %}
+
+{% block title %}Bifröst — Edit Step{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <li><a href="{% url 'bifrost:project-list' %}">Projects</a></li>
+            <li><a href="{% url 'bifrost:project-detail' project.pk %}">{{ project.name }}</a></li>
+            <li><a href="{% url 'bifrost:task-detail' project.pk task.pk %}">{{ task.title }}</a></li>
+            <li class="is-active"><a href="#" aria-current="page">Edit Step</a></li>
+        </ul>
+    </nav>
+
+    <h1 class="title">Edit Step</h1>
+
+    <div class="box">
+        <form method="post">
+            {% csrf_token %}
+            <div class="field">
+                <label class="label">Order</label>
+                <div class="control">
+                    <input class="input" type="number" name="order" value="{{ form.order.value|default:step.order }}" min="1" required>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">Description</label>
+                <div class="control">
+                    <textarea class="textarea" name="description" rows="3" required>{{ form.description.value|default:step.description }}</textarea>
+                </div>
+            </div>
+            <div class="field">
+                <label class="checkbox">
+                    <input type="checkbox" name="completed" {% if form.completed.value or step.completed %}checked{% endif %}> Completed
+                </label>
+            </div>
+            <div class="field is-grouped">
+                <div class="control">
+                    <button class="button is-primary" type="submit">Save</button>
+                </div>
+                <div class="control">
+                    <a href="{% url 'bifrost:task-detail' project.pk task.pk %}" class="button is-light">Cancel</a>
+                </div>
+            </div>
+        </form>
+    </div>
+
+</div>
+{% endblock %}

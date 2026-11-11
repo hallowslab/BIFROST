@@ -66,6 +66,18 @@
                 </div>
             </div>
 
+            {% if form.project_template %}
+            <div class="field">
+                <label class="label">{{ form.project_template.label }}</label>
+                <div class="control">
+                    <div class="select is-fullwidth">
+                        {{ form.project_template }}
+                    </div>
+                </div>
+                <p class="help">{{ form.project_template.help_text }}</p>
+            </div>
+            {% endif %}
+
             <div class="columns">
                 {# Status #}
                 <div class="column is-narrow">

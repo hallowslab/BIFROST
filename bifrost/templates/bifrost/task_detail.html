@@ -1,0 +1,115 @@
+{% extends "bifrost/base.html" %}
+
+{% block title %}Bifröst — {{ task.title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    <nav class="breadcrumb" aria-label="breadcrumbs">
+        <ul>
+            <li><a href="{% url 'bifrost:project-list' %}">Projects</a></li>
+            <li><a href="{% url 'bifrost:project-detail' project.pk %}">{{ project.name }}</a></li>
+            <li class="is-active"><a href="#" aria-current="page">{{ task.title }}</a></li>
+        </ul>
+    </nav>
+
+    <div class="level">
+        <div class="level-left">
+            <div>
+                <h1 class="title mb-1">{{ task.title }}</h1>
+                <p class="subtitle is-6">
+                    {{ task.get_status_display }}
+                    &nbsp;&middot;&nbsp;
+                    Assigned: <strong>{{ task.assigned_to.get_full_name|default:task.assigned_to.username|default:"—" }}</strong>
+                    &nbsp;&middot;&nbsp;
+                    Created {{ task.created_at|date:"Y-m-d" }}
+                    {% if task.completed_at %}
+                    &middot; Completed {{ task.completed_at|date:"Y-m-d" }}
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+        <div class="level-right">
+            <a href="{% url 'bifrost:project-detail' project.pk %}#tasks" class="button is-light">Back</a>
+        </div>
+    </div>
+
+    {% if task.description %}
+    <div class="box mb-5">
+        <p class="has-text-weight-semibold mb-1">Description</p>
+        <p>{{ task.description|linebreaksbr }}</p>
+    </div>
+    {% endif %}
+
+    <h2 class="subtitle">Steps</h2>
+
+    {% if steps %}
+    <div class="table-container">
+        <table class="table is-fullwidth is-hoverable">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Description</th>
+                    <th>Done</th>
+                    {% if can_edit %}
+                    <th></th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for step in steps %}
+                <tr>
+                    <td>{{ step.order }}</td>
+                    <td>{{ step.description|linebreaksbr }}</td>
+                    <td>{% if step.completed %}<span class="tag is-success">Done</span>{% else %}<span class="tag is-light">Pending</span>{% endif %}</td>
+                    {% if can_edit %}
+                    <td class="has-text-right">
+                        <a href="{% url 'bifrost:task-step-edit' project.pk task.pk step.pk %}" class="button is-small is-light mr-1">Edit</a>
+                        <form method="post" action="{% url 'bifrost:task-step-delete' project.pk task.pk step.pk %}" style="display:inline" onsubmit="return confirm('Delete this step?')">
+                            {% csrf_token %}
+                            <button type="submit" class="button is-small is-danger is-light">Delete</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="box">No steps defined yet.</div>
+    {% endif %}
+
+    {% if can_edit %}
+    <h3 class="subtitle mt-5">Add Step</h3>
+    <div class="box">
+        <form method="post">
+            {% csrf_token %}
+            <div class="field">
+                <label class="label">Order</label>
+                <div class="control">
+                    <input class="input" type="number" name="order" value="{{ steps|length|add:1 }}" min="1" required>
+                </div>
+            </div>
+            <div class="field">
+                <label class="label">Description</label>
+                <div class="control">
+                    <textarea class="textarea" name="description" rows="2" required></textarea>
+                </div>
+            </div>
+            <div class="field">
+                <label class="checkbox">
+                    <input type="checkbox" name="completed"> Completed
+                </label>
+            </div>
+            <div class="field">
+                <div class="control">
+                    <button class="button is-primary" type="submit">Add Step</button>
+                </div>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
